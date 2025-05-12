@@ -11,6 +11,11 @@ services:
       - pgdata:/var/lib/postgresql/data
       - ./scripts/create_tables.sql:/docker-entrypoint-initdb.d/01_create_tables.sql
       - ./scripts/insert_into_wallets.sql:/docker-entrypoint-initdb.d/02_insert_into_wallets.sql
+    healthcheck:
+      test: [ "CMD", "pg_isready", "-U", "${POSTGRES_USER}", "-d", "${POSTGRES_DB}" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   app:
     build:
@@ -20,7 +25,8 @@ services:
     ports:
       - "8080:8080"
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     env_file:
       - .env
 

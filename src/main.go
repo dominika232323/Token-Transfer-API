@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/dominika232323/token-transfer-api/src/internal/db"
 	"log"
 	"net/http"
 	"os"
@@ -10,13 +11,16 @@ import (
 	"github.com/99designs/gqlgen/graphql/handler/lru"
 	"github.com/99designs/gqlgen/graphql/handler/transport"
 	"github.com/99designs/gqlgen/graphql/playground"
-	"github.com/dominika232323/token-transfer-api/graph"
 	"github.com/vektah/gqlparser/v2/ast"
+
+	"github.com/dominika232323/token-transfer-api/graph"
 )
 
 const defaultPort = "8080"
 
 func main() {
+	_ = db.Connect()
+
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = defaultPort

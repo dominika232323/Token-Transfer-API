@@ -7,11 +7,56 @@ package graph
 import (
 	"context"
 	"fmt"
+	"github.com/dominika232323/token-transfer-api/internal/db"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // Transfer is the resolver for the transfer field.
 func (r *mutationResolver) Transfer(ctx context.Context, fromAddress string, toAddress string, amount int32) (int32, error) {
-	panic(fmt.Errorf("not implemented: Transfer - transfer"))
+	database := r.Resolver.DB
+
+	err := database.Transaction(func(tx *gorm.DB) error {
+		var sender db.Wallet
+
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			First(&sender, "address = ?", fromAddress).Error; err != nil {
+			return fmt.Errorf("sender not found")
+		}
+
+		if sender.Balance < int64(amount) {
+			return fmt.Errorf("Insufficient balance")
+		}
+
+		sender.Balance -= int64(amount)
+
+		if err := tx.Save(&sender).Error; err != nil {
+			return err
+		}
+
+		var recipient db.Wallet
+
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			First(&recipient, "address = ?", toAddress).Error; err != nil {
+			return fmt.Errorf("recipient not found")
+		}
+
+		recipient.Balance += int64(amount)
+
+		if err := tx.Save(&recipient).Error; err != nil {
+			return err
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return 0, err
+	}
+
+	var updatedSender db.Wallet
+	database.First(&updatedSender, "address = ?", fromAddress)
+	return int32(updatedSender.Balance), nil
 }
 
 // Mutation returns MutationResolver implementation.

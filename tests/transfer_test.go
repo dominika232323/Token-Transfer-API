@@ -37,19 +37,10 @@ func TestMain(m *testing.M) {
 }
 
 func TestSuccessfulTransfer(t *testing.T) {
-	testDB.Exec("TRUNCATE TABLE wallets RESTART IDENTITY")
-
 	senderAddress := "0x0000000000000000000000000000000000000001"
 	receiverAddress := "0x0000000000000000000000000000000000000002"
 
-	err := testDB.Create(&db.Wallet{Address: senderAddress, Balance: 1000}).Error
-	assert.NoError(t, err)
-	err = testDB.Create(&db.Wallet{Address: receiverAddress, Balance: 100}).Error
-	assert.NoError(t, err)
-
-	resolver := &graph.Resolver{DB: testDB}
-	mutation := resolver.Mutation()
-
+	err, mutation := SetUpDatabase(t, senderAddress, 1000, receiverAddress, 100)
 	newBalance, err := mutation.Transfer(context.Background(), senderAddress, receiverAddress, 200)
 
 	assert.NoError(t, err)
@@ -65,21 +56,40 @@ func TestSuccessfulTransfer(t *testing.T) {
 }
 
 func TestTransferInsufficientBalance(t *testing.T) {
-	testDB.Exec("TRUNCATE TABLE wallets RESTART IDENTITY")
-
 	senderAddress := "0x0000000000000000000000000000000000000001"
 	receiverAddress := "0x0000000000000000000000000000000000000002"
 
-	err := testDB.Create(&db.Wallet{Address: senderAddress, Balance: 100}).Error
-	assert.NoError(t, err)
-	err = testDB.Create(&db.Wallet{Address: receiverAddress, Balance: 100}).Error
-	assert.NoError(t, err)
-
-	resolver := &graph.Resolver{DB: testDB}
-	mutation := resolver.Mutation()
-
+	err, mutation := SetUpDatabase(t, senderAddress, 100, receiverAddress, 100)
 	_, err = mutation.Transfer(context.Background(), senderAddress, receiverAddress, 200)
 
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "Insufficient balance")
+}
+
+func SetUpDatabase(t *testing.T, senderAddress string, senderBalance int64, receiverAddress string, receiverBalance int64) (error, graph.MutationResolver) {
+	RestartDatabase()
+
+	err := CreateWallet(t, senderAddress, senderBalance)
+	assert.NoError(t, err)
+	err = CreateWallet(t, receiverAddress, receiverBalance)
+	assert.NoError(t, err)
+
+	mutation := CreateMutationResolver()
+	return err, mutation
+}
+
+func RestartDatabase() *gorm.DB {
+	return testDB.Exec("TRUNCATE TABLE wallets RESTART IDENTITY")
+}
+
+func CreateMutationResolver() graph.MutationResolver {
+	resolver := &graph.Resolver{DB: testDB}
+	mutation := resolver.Mutation()
+	return mutation
+}
+
+func CreateWallet(t *testing.T, senderAddress string, balance int64) error {
+	err := testDB.Create(&db.Wallet{Address: senderAddress, Balance: balance}).Error
+	assert.NoError(t, err)
+	return err
 }

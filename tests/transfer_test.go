@@ -78,6 +78,18 @@ func TestTransferToUnknownRecipient(t *testing.T) {
 	assert.Contains(t, err.Error(), "recipient not found")
 }
 
+func TestTransferFromUnknownSender(t *testing.T) {
+	senderAddress := "0x0000000000000000000000000000000000000001"
+	recipientAddress := "0x0000000000000000000000000000000000000002"
+	unknowSenderAddress := "0x0000000000000000000000000000000000000003"
+
+	err, mutation := SetUpDatabase(t, senderAddress, 1000, recipientAddress, 100)
+	_, err = mutation.Transfer(context.Background(), unknowSenderAddress, recipientAddress, 100)
+
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "sender not found")
+}
+
 func SetUpDatabase(t *testing.T, senderAddress string, senderBalance int64, recipientAddress string, recipientBalance int64) (error, graph.MutationResolver) {
 	RestartDatabase()
 

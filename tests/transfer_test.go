@@ -38,17 +38,17 @@ func TestMain(m *testing.M) {
 
 func TestSuccessfulTransfer(t *testing.T) {
 	senderAddress := "0x0000000000000000000000000000000000000001"
-	receiverAddress := "0x0000000000000000000000000000000000000002"
+	recipientAddress := "0x0000000000000000000000000000000000000002"
 
-	err, mutation := SetUpDatabase(t, senderAddress, 1000, receiverAddress, 100)
-	newBalance, err := mutation.Transfer(context.Background(), senderAddress, receiverAddress, 200)
+	err, mutation := SetUpDatabase(t, senderAddress, 1000, recipientAddress, 100)
+	newBalance, err := mutation.Transfer(context.Background(), senderAddress, recipientAddress, 200)
 
 	assert.NoError(t, err)
 	assert.Equal(t, int32(800), newBalance)
 
-	var receiver db.Wallet
-	testDB.First(&receiver, "address = ?", receiverAddress)
-	assert.Equal(t, int64(300), receiver.Balance)
+	var recipient db.Wallet
+	testDB.First(&recipient, "address = ?", recipientAddress)
+	assert.Equal(t, int64(300), recipient.Balance)
 
 	var sender db.Wallet
 	testDB.First(&sender, "address = ?", senderAddress)
@@ -57,21 +57,33 @@ func TestSuccessfulTransfer(t *testing.T) {
 
 func TestTransferInsufficientBalance(t *testing.T) {
 	senderAddress := "0x0000000000000000000000000000000000000001"
-	receiverAddress := "0x0000000000000000000000000000000000000002"
+	recipientAddress := "0x0000000000000000000000000000000000000002"
 
-	err, mutation := SetUpDatabase(t, senderAddress, 100, receiverAddress, 100)
-	_, err = mutation.Transfer(context.Background(), senderAddress, receiverAddress, 200)
+	err, mutation := SetUpDatabase(t, senderAddress, 100, recipientAddress, 100)
+	_, err = mutation.Transfer(context.Background(), senderAddress, recipientAddress, 200)
 
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "Insufficient balance")
 }
 
-func SetUpDatabase(t *testing.T, senderAddress string, senderBalance int64, receiverAddress string, receiverBalance int64) (error, graph.MutationResolver) {
+func TestTransferToUnknownRecipient(t *testing.T) {
+	senderAddress := "0x0000000000000000000000000000000000000001"
+	recipientAddress := "0x0000000000000000000000000000000000000002"
+	unknowRecipientAddress := "0x0000000000000000000000000000000000000003"
+
+	err, mutation := SetUpDatabase(t, senderAddress, 1000, recipientAddress, 100)
+	_, err = mutation.Transfer(context.Background(), senderAddress, unknowRecipientAddress, 100)
+
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "recipient not found")
+}
+
+func SetUpDatabase(t *testing.T, senderAddress string, senderBalance int64, recipientAddress string, recipientBalance int64) (error, graph.MutationResolver) {
 	RestartDatabase()
 
 	err := CreateWallet(t, senderAddress, senderBalance)
 	assert.NoError(t, err)
-	err = CreateWallet(t, receiverAddress, receiverBalance)
+	err = CreateWallet(t, recipientAddress, recipientBalance)
 	assert.NoError(t, err)
 
 	mutation := CreateMutationResolver()

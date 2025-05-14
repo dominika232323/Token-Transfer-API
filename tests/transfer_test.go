@@ -32,13 +32,13 @@ func TestMain(m *testing.M) {
 		log.Fatalf("failed to connect to test db: %v", err)
 	}
 
-	testDB.Exec("TRUNCATE TABLE wallets RESTART IDENTITY")
-
 	code := m.Run()
 	os.Exit(code)
 }
 
 func TestSuccessfulTransfer(t *testing.T) {
+	testDB.Exec("TRUNCATE TABLE wallets RESTART IDENTITY")
+
 	senderAddress := "0x0000000000000000000000000000000000000001"
 	receiverAddress := "0x0000000000000000000000000000000000000002"
 
@@ -62,4 +62,24 @@ func TestSuccessfulTransfer(t *testing.T) {
 	var sender db.Wallet
 	testDB.First(&sender, "address = ?", senderAddress)
 	assert.Equal(t, int64(800), sender.Balance)
+}
+
+func TestTransferInsufficientBalance(t *testing.T) {
+	testDB.Exec("TRUNCATE TABLE wallets RESTART IDENTITY")
+
+	senderAddress := "0x0000000000000000000000000000000000000001"
+	receiverAddress := "0x0000000000000000000000000000000000000002"
+
+	err := testDB.Create(&db.Wallet{Address: senderAddress, Balance: 100}).Error
+	assert.NoError(t, err)
+	err = testDB.Create(&db.Wallet{Address: receiverAddress, Balance: 100}).Error
+	assert.NoError(t, err)
+
+	resolver := &graph.Resolver{DB: testDB}
+	mutation := resolver.Mutation()
+
+	_, err = mutation.Transfer(context.Background(), senderAddress, receiverAddress, 200)
+
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "Insufficient balance")
 }

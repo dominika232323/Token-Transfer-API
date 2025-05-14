@@ -29,6 +29,10 @@ func (r *mutationResolver) Transfer(ctx context.Context, fromAddress string, toA
 			return fmt.Errorf("Insufficient balance")
 		}
 
+		if int64(amount) < 0 {
+			return fmt.Errorf("amount cannot be negative")
+		}
+
 		sender.Balance -= int64(amount)
 
 		if err := tx.Save(&sender).Error; err != nil {

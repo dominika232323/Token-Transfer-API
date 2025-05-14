@@ -143,6 +143,16 @@ func TestTransferWithZeroAmount(t *testing.T) {
 	assert.Equal(t, int64(1000), sender.Balance)
 }
 
+func TestTransferWithNegativeAmountToSelf(t *testing.T) {
+	senderAddress := "0x0000000000000000000000000000000000000001"
+
+	err, mutation := SetUpDatabase(t, senderAddress, 1000, "", 0)
+	_, err = mutation.Transfer(context.Background(), senderAddress, senderAddress, -200)
+
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "amount cannot be negative")
+}
+
 func SetUpDatabase(t *testing.T, senderAddress string, senderBalance int64, recipientAddress string, recipientBalance int64) (error, graph.MutationResolver) {
 	RestartDatabase()
 

@@ -113,6 +113,36 @@ func TestTransferToSelfWithInsufficientBalance(t *testing.T) {
 	assert.Contains(t, err.Error(), "Insufficient balance")
 }
 
+func TestTransferWithNegativeAmount(t *testing.T) {
+	senderAddress := "0x0000000000000000000000000000000000000001"
+	recipientAddress := "0x0000000000000000000000000000000000000002"
+
+	err, mutation := SetUpDatabase(t, senderAddress, 1000, recipientAddress, 1000)
+	_, err = mutation.Transfer(context.Background(), senderAddress, recipientAddress, -200)
+
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "amount cannot be negative")
+}
+
+func TestTransferWithZeroAmount(t *testing.T) {
+	senderAddress := "0x0000000000000000000000000000000000000001"
+	recipientAddress := "0x0000000000000000000000000000000000000002"
+
+	err, mutation := SetUpDatabase(t, senderAddress, 1000, recipientAddress, 100)
+	newBalance, err := mutation.Transfer(context.Background(), senderAddress, senderAddress, 0)
+
+	assert.NoError(t, err)
+	assert.Equal(t, int32(1000), newBalance)
+
+	var recipient db.Wallet
+	testDB.First(&recipient, "address = ?", recipientAddress)
+	assert.Equal(t, int64(100), recipient.Balance)
+
+	var sender db.Wallet
+	testDB.First(&sender, "address = ?", senderAddress)
+	assert.Equal(t, int64(1000), sender.Balance)
+}
+
 func SetUpDatabase(t *testing.T, senderAddress string, senderBalance int64, recipientAddress string, recipientBalance int64) (error, graph.MutationResolver) {
 	RestartDatabase()
 

@@ -8,24 +8,63 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/dominika232323/token-transfer-api/graph/model"
+	"github.com/dominika232323/token-transfer-api/internal/db"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
-// CreateTodo is the resolver for the createTodo field.
-func (r *mutationResolver) CreateTodo(ctx context.Context, input model.NewTodo) (*model.Todo, error) {
-	panic(fmt.Errorf("not implemented: CreateTodo - createTodo"))
-}
+// Transfer is the resolver for the transfer field.
+func (r *mutationResolver) Transfer(ctx context.Context, fromAddress string, toAddress string, amount int32) (int32, error) {
+	database := r.Resolver.DB
 
-// Todos is the resolver for the todos field.
-func (r *queryResolver) Todos(ctx context.Context) ([]*model.Todo, error) {
-	panic(fmt.Errorf("not implemented: Todos - todos"))
+	err := database.Transaction(func(tx *gorm.DB) error {
+		var sender db.Wallet
+
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			First(&sender, "address = ?", fromAddress).Error; err != nil {
+			return fmt.Errorf("sender not found")
+		}
+
+		if sender.Balance < int64(amount) {
+			return fmt.Errorf("Insufficient balance")
+		}
+
+		if int64(amount) < 0 {
+			return fmt.Errorf("amount cannot be negative")
+		}
+
+		sender.Balance -= int64(amount)
+
+		if err := tx.Save(&sender).Error; err != nil {
+			return err
+		}
+
+		var recipient db.Wallet
+
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			First(&recipient, "address = ?", toAddress).Error; err != nil {
+			return fmt.Errorf("recipient not found")
+		}
+
+		recipient.Balance += int64(amount)
+
+		if err := tx.Save(&recipient).Error; err != nil {
+			return err
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return 0, err
+	}
+
+	var updatedSender db.Wallet
+	database.First(&updatedSender, "address = ?", fromAddress)
+	return int32(updatedSender.Balance), nil
 }
 
 // Mutation returns MutationResolver implementation.
 func (r *Resolver) Mutation() MutationResolver { return &mutationResolver{r} }
 
-// Query returns QueryResolver implementation.
-func (r *Resolver) Query() QueryResolver { return &queryResolver{r} }
-
 type mutationResolver struct{ *Resolver }
-type queryResolver struct{ *Resolver }

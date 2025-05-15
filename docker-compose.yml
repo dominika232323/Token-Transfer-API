@@ -30,5 +30,16 @@ services:
     env_file:
       - .env
 
+  test:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - .env
+    command: [ "go", "test", "./tests/..." ]
+
 volumes:
   pgdata:

@@ -2,12 +2,15 @@ package tests
 
 import (
 	"context"
+	"fmt"
 	"github.com/dominika232323/token-transfer-api/graph"
 	"github.com/dominika232323/token-transfer-api/internal/db"
 	"github.com/stretchr/testify/assert"
 	"log"
 	"os"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/joho/godotenv"
 	"gorm.io/driver/postgres"
@@ -151,6 +154,78 @@ func TestTransferWithNegativeAmountToSelf(t *testing.T) {
 
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "amount cannot be negative")
+}
+
+func TestConcurrentTransfers(t *testing.T) {
+	wallet1Address := "0x0000000000000000000000000000000000000001"
+	wallet2Address := "0x0000000000000000000000000000000000000002"
+
+	_, mutation := SetUpDatabase(t, wallet1Address, 10, wallet2Address, 10)
+
+	var wg sync.WaitGroup
+	wg.Add(3)
+	start := make(chan struct{})
+
+	results := make([]error, 3)
+	transfers := []int32{-4, -7, 1}
+
+	for i, amount := range transfers {
+		go func(i int, amount int32) {
+			defer wg.Done()
+
+			<-start
+
+			if amount < 0 {
+				_, err := mutation.Transfer(context.Background(), wallet1Address, wallet2Address, -1*amount)
+				fmt.Printf("Starting transfer: %d from %s to %s\n", amount, wallet1Address, wallet2Address)
+				results[i] = err
+			} else {
+				_, err := mutation.Transfer(context.Background(), wallet2Address, wallet1Address, amount)
+				fmt.Printf("Starting transfer: %d from %s to %s\n", amount, wallet2Address, wallet1Address)
+				results[i] = err
+			}
+
+		}(i, amount)
+	}
+
+	time.Sleep(200 * time.Millisecond)
+
+	close(start)
+	wg.Wait()
+
+	var wallet1 db.Wallet
+	testDB.First(&wallet1, "address = ?", wallet1Address)
+
+	var wallet2 db.Wallet
+	testDB.First(&wallet2, "address = ?", wallet2Address)
+
+	var wallet1Received int32
+	var wallet2Received int32
+
+	for i, err := range results {
+		if err == nil {
+			if transfers[i] < 0 {
+				wallet2Received += -1 * transfers[i]
+			} else {
+				wallet1Received += transfers[i]
+			}
+		}
+	}
+
+	expectedFinalWallet1Balance := 10 - int64(wallet2Received) + int64(wallet1Received)
+	expectedFinalWallet2Balance := 10 - int64(wallet1Received) + int64(wallet2Received)
+
+	assert.Equal(t, expectedFinalWallet1Balance, wallet1.Balance)
+	assert.Equal(t, expectedFinalWallet2Balance, wallet2.Balance)
+
+	assert.GreaterOrEqual(t, wallet1.Balance, int64(0))
+	assert.GreaterOrEqual(t, wallet2.Balance, int64(0))
+}
+
+func TestConcurrentTransfers_MultipleRuns(t *testing.T) {
+	for i := 0; i < 100; i++ {
+		t.Run(fmt.Sprintf("Run-%d", i), TestConcurrentTransfers)
+	}
 }
 
 func SetUpDatabase(t *testing.T, senderAddress string, senderBalance int64, recipientAddress string, recipientBalance int64) (error, graph.MutationResolver) {

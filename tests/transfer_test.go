@@ -177,11 +177,9 @@ func TestConcurrentTransfers(t *testing.T) {
 
 			if amount < 0 {
 				_, err := mutation.Transfer(context.Background(), wallet1Address, wallet2Address, -1*amount)
-				fmt.Printf("Starting transfer: %d from %s to %s\n", amount, wallet1Address, wallet2Address)
 				results[i] = err
 			} else {
 				_, err := mutation.Transfer(context.Background(), wallet2Address, wallet1Address, amount)
-				fmt.Printf("Starting transfer: %d from %s to %s\n", amount, wallet2Address, wallet1Address)
 				results[i] = err
 			}
 

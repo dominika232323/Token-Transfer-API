@@ -2,6 +2,15 @@
 
 A GraphQL API written in Go for transferring BTP tokens between wallets.
 
+## Technologies Used
+
+- **Go** (Golang)
+- **GraphQL** (gqlgen)
+- **GORM** (ORM for PostgreSQL)
+- **PostgreSQL**
+- **Testify**
+- **Docker & Docker Compose**
+
 ## Getting Started
 
 ### Clone the Repository

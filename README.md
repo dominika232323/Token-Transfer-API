@@ -1,6 +1,13 @@
 # Token Transfer API
 
-A GraphQL API written in Go for transferring BTP tokens between wallets.
+Token Transfer API is a GraphQL service written in Go that enables secure BTP token transfers between wallets.
+It ensures consistent and safe operations using PostgreSQL transactions and row-level locking.
+
+The system is designed to be simple, robust, and testable, featuring:
+- transferring tokens between wallet addresses using a GraphQL mutation,
+- GraphQL Playground for interactive testing,
+- fully containerized development via Docker Compose,
+- built-in tests to validate core functionality and race condition safety.
 
 ## Technologies Used
 
@@ -49,8 +56,16 @@ If you're running locally without Docker Compose, you can set `POSTGRES_HOST=loc
 docker compose up --build app
 ```
 
+Visit http://localhost:8080/ to use GraphQL Playground.
+
 ### Running tests
 
 ```bash
 docker compose up --build test
 ```
+
+This includes:
+- Tests for successful and unsuccessful transfers
+- Concurrency tests to simulate race conditions
+
+

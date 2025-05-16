@@ -68,4 +68,148 @@ This includes:
 - Tests for successful and unsuccessful transfers
 - Concurrency tests to simulate race conditions
 
+## Example GraphQL Mutations
 
+Use the `transfer` mutation to send tokens between wallets. Below are examples of both successful and failed transfer scenarios.
+
+You can try them in the GraphQL Playground at http://localhost:8080
+
+### Successful transaction
+
+```
+mutation {
+  transfer(
+    from_address: "0x0000000000000000000000000000000000000000",
+    to_address: "0x0000000000000000000000000000000000000001",
+    amount: 200
+  )
+}
+```
+
+Returns
+
+```
+{
+  "data": {
+    "transfer": 999800
+  }
+}
+```
+
+### Insufficient balance
+
+```
+mutation {
+  transfer(
+    from_address: "0x0000000000000000000000000000000000000000",
+    to_address: "0x0000000000000000000000000000000000000001",
+    amount: 2000000
+  )
+}
+```
+
+Returns 
+
+```
+{
+  "errors": [
+    {
+      "message": "Insufficient balance",
+      "path": [
+        "transfer"
+      ]
+    }
+  ],
+  "data": null
+}
+```
+
+**Note:** If a wallet with the address `0x0000000000000000000000000000000000000000` balance at leat 2000000 exists in the database, this transaction will succeed.
+
+### Sender not found
+
+```
+mutation {
+  transfer(
+    from_address: "0x0000000000000000000000000000000000000002",
+    to_address: "0x0000000000000000000000000000000000000001",
+    amount: 200
+  )
+}
+```
+
+Returns 
+
+```
+{
+  "errors": [
+    {
+      "message": "sender not found",
+      "path": [
+        "transfer"
+      ]
+    }
+  ],
+  "data": null
+}
+```
+
+**Note:** If a wallet with the address `0x0000000000000000000000000000000000000002` and balance at leat 200 exists in the database, this transaction will succeed.
+
+### Recipient not found
+
+```
+mutation {
+  transfer(
+    from_address: "0x0000000000000000000000000000000000000000",
+    to_address: "0x0000000000000000000000000000000000000003",
+    amount: 200
+  )
+}
+```
+
+Returns 
+
+```
+{
+  "errors": [
+    {
+      "message": "recipient not found",
+      "path": [
+        "transfer"
+      ]
+    }
+  ],
+  "data": null
+}
+```
+
+**Note:** If a wallet with the address `0x0000000000000000000000000000000000000003` exists in the database, this transaction will succeed.
+
+### Amount cannot be negative
+
+```
+mutation {
+  transfer(
+    from_address: "0x0000000000000000000000000000000000000000",
+    to_address: "0x0000000000000000000000000000000000000001",
+    amount: -200
+  )
+}
+```
+
+Returns
+
+```
+{
+  "errors": [
+    {
+      "message": "amount cannot be negative",
+      "path": [
+        "transfer"
+      ]
+    }
+  ],
+  "data": null
+}
+```

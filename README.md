@@ -213,3 +213,7 @@ Returns
   "data": null
 }
 ```
+
+## Author
+
+Dominika Boguszewska

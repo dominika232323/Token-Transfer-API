@@ -17,12 +17,16 @@ import (
 func (r *mutationResolver) Transfer(ctx context.Context, fromAddress string, toAddress string, amount int32) (int32, error) {
 	database := r.Resolver.DB
 
+	if amount < 0 {
+		return 0, fmt.Errorf("amount cannot be negative")
+	}
+
 	err := database.Transaction(func(tx *gorm.DB) error {
 		var sender db.Wallet
 
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			First(&sender, "address = ?", fromAddress).Error; err != nil {
-			return fmt.Errorf("sender not found")
+			FirstOrCreate(&sender, db.Wallet{Address: fromAddress}).Error; err != nil {
+			return fmt.Errorf("failed to find or create sender: %v", err)
 		}
 
 		if sender.Balance < int64(amount) {
@@ -36,20 +40,20 @@ func (r *mutationResolver) Transfer(ctx context.Context, fromAddress string, toA
 		sender.Balance -= int64(amount)
 
 		if err := tx.Save(&sender).Error; err != nil {
-			return err
+			return fmt.Errorf("failed to update sender balance: %v", err)
 		}
 
 		var recipient db.Wallet
 
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			First(&recipient, "address = ?", toAddress).Error; err != nil {
-			return fmt.Errorf("recipient not found")
+			FirstOrCreate(&recipient, db.Wallet{Address: toAddress}).Error; err != nil {
+			return fmt.Errorf("failed to find or create recipient: %v", err)
 		}
 
 		recipient.Balance += int64(amount)
 
 		if err := tx.Save(&recipient).Error; err != nil {
-			return err
+			return fmt.Errorf("failed to update recipient balance: %v", err)
 		}
 
 		return nil

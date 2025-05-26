@@ -234,6 +234,56 @@ func TestConcurrentTransfers_MultipleRuns(t *testing.T) {
 	}
 }
 
+func TestConcurrentWalletCreation(t *testing.T) {
+	senderAddress := "0x0000000000000000000000000000000000000001"
+	recipientAddress := "0x0000000000000000000000000000000000000002"
+
+	_, mutation := SetUpDatabase(t, senderAddress, 1000, "", 0)
+
+	var wg sync.WaitGroup
+	numTransfers := 5
+	wg.Add(numTransfers)
+	start := make(chan struct{})
+
+	transferAmount := int32(100)
+	errors := make([]error, numTransfers)
+
+	for i := 0; i < numTransfers; i++ {
+		go func(i int) {
+			defer wg.Done()
+
+			<-start
+
+			_, err := mutation.Transfer(context.Background(), senderAddress, recipientAddress, transferAmount)
+			errors[i] = err
+		}(i)
+	}
+
+	close(start)
+	wg.Wait()
+
+	successfulTransfers := 0
+
+	for _, err := range errors {
+		if err == nil {
+			successfulTransfers++
+		}
+	}
+
+	assert.Greater(t, successfulTransfers, 0, "At least one transfer should succeed")
+
+	var recipient db.Wallet
+	result := testDB.First(&recipient, "address = ?", recipientAddress)
+	assert.NoError(t, result.Error, "New wallet should exist")
+
+	expectedRecipientBalance := int64(successfulTransfers) * int64(transferAmount)
+	assert.Equal(t, expectedRecipientBalance, recipient.Balance)
+
+	var sender db.Wallet
+	testDB.First(&sender, "address = ?", senderAddress)
+	assert.Equal(t, int64(1000)-expectedRecipientBalance, sender.Balance)
+}
+
 func SetUpDatabase(t *testing.T, senderAddress string, senderBalance int64, recipientAddress string, recipientBalance int64) (error, graph.MutationResolver) {
 	RestartDatabase()
 

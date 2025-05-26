@@ -16,6 +16,7 @@ import (
 // Transfer is the resolver for the transfer field.
 func (r *mutationResolver) Transfer(ctx context.Context, fromAddress string, toAddress string, amount int32) (int32, error) {
 	database := r.Resolver.DB
+	var updatedBalance int32
 
 	if amount < 0 {
 		return 0, fmt.Errorf("amount cannot be negative")
@@ -31,10 +32,6 @@ func (r *mutationResolver) Transfer(ctx context.Context, fromAddress string, toA
 
 		if sender.Balance < int64(amount) {
 			return fmt.Errorf("Insufficient balance")
-		}
-
-		if int64(amount) < 0 {
-			return fmt.Errorf("amount cannot be negative")
 		}
 
 		sender.Balance -= int64(amount)
@@ -56,6 +53,8 @@ func (r *mutationResolver) Transfer(ctx context.Context, fromAddress string, toA
 			return fmt.Errorf("failed to update recipient balance: %v", err)
 		}
 
+		updatedBalance = int32(sender.Balance)
+
 		return nil
 	})
 
@@ -63,9 +62,7 @@ func (r *mutationResolver) Transfer(ctx context.Context, fromAddress string, toA
 		return 0, err
 	}
 
-	var updatedSender db.Wallet
-	database.First(&updatedSender, "address = ?", fromAddress)
-	return int32(updatedSender.Balance), nil
+	return updatedBalance, nil
 }
 
 // Mutation returns MutationResolver implementation.

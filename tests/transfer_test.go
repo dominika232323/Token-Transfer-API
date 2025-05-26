@@ -5,16 +5,15 @@ import (
 	"fmt"
 	"github.com/dominika232323/token-transfer-api/graph"
 	"github.com/dominika232323/token-transfer-api/internal/db"
+	"github.com/joho/godotenv"
 	"github.com/stretchr/testify/assert"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
 	"log"
 	"os"
 	"sync"
 	"testing"
 	"time"
-
-	"github.com/joho/godotenv"
-	"gorm.io/driver/postgres"
-	"gorm.io/gorm"
 )
 
 var testDB *gorm.DB
@@ -162,6 +161,30 @@ func TestTransferWithNegativeAmountToSelf(t *testing.T) {
 
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "amount cannot be negative")
+}
+
+func TestTransferWithZeroAmountToSelf(t *testing.T) {
+	senderAddress := "0x0000000000000000000000000000000000000001"
+
+	err, mutation := SetUpDatabase(t, senderAddress, 1000, "", 0)
+	newBalance, err := mutation.Transfer(context.Background(), senderAddress, senderAddress, 0)
+
+	assert.NoError(t, err)
+	assert.Equal(t, int32(1000), newBalance)
+
+	var sender db.Wallet
+	testDB.First(&sender, "address = ?", senderAddress)
+	assert.Equal(t, int64(1000), sender.Balance)
+}
+
+func TestTransferToNonExistentSelf(t *testing.T) {
+	senderAddress := "0x0000000000000000000000000000000000000001"
+
+	err, mutation := SetUpDatabase(t, "", 0, "", 0)
+	_, err = mutation.Transfer(context.Background(), senderAddress, senderAddress, 200)
+
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "Insufficient balance")
 }
 
 func TestConcurrentTransfers(t *testing.T) {

@@ -13,7 +13,6 @@ import (
 	"os"
 	"sync"
 	"testing"
-	"time"
 )
 
 var testDB *gorm.DB
@@ -216,8 +215,6 @@ func TestConcurrentTransfers(t *testing.T) {
 
 		}(i, amount)
 	}
-
-	time.Sleep(200 * time.Millisecond)
 
 	close(start)
 	wg.Wait()

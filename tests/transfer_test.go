@@ -74,10 +74,18 @@ func TestTransferToUnknownRecipient(t *testing.T) {
 	unknowRecipientAddress := "0x0000000000000000000000000000000000000002"
 
 	err, mutation := SetUpDatabase(t, senderAddress, 1000, "", 0)
-	_, err = mutation.Transfer(context.Background(), senderAddress, unknowRecipientAddress, 100)
+	newBalance, err := mutation.Transfer(context.Background(), senderAddress, unknowRecipientAddress, 200)
 
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "recipient not found")
+	assert.NoError(t, err)
+	assert.Equal(t, int32(800), newBalance)
+
+	var recipient db.Wallet
+	testDB.First(&recipient, "address = ?", unknowRecipientAddress)
+	assert.Equal(t, int64(200), recipient.Balance)
+
+	var sender db.Wallet
+	testDB.First(&sender, "address = ?", senderAddress)
+	assert.Equal(t, int64(800), sender.Balance)
 }
 
 func TestTransferFromUnknownSender(t *testing.T) {
@@ -86,10 +94,10 @@ func TestTransferFromUnknownSender(t *testing.T) {
 	unknowSenderAddress := "0x0000000000000000000000000000000000000003"
 
 	err, mutation := SetUpDatabase(t, senderAddress, 1000, recipientAddress, 100)
-	_, err = mutation.Transfer(context.Background(), unknowSenderAddress, recipientAddress, 100)
+	_, err = mutation.Transfer(context.Background(), unknowSenderAddress, recipientAddress, 200)
 
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "sender not found")
+	assert.Contains(t, err.Error(), "Insufficient balance")
 }
 
 func TestTransferToSelf(t *testing.T) {

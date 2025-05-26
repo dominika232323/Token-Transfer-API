@@ -34,6 +34,11 @@ func (r *mutationResolver) Transfer(ctx context.Context, fromAddress string, toA
 			return fmt.Errorf("Insufficient balance")
 		}
 
+		if fromAddress == toAddress {
+			updatedBalance = int32(sender.Balance)
+			return nil
+		}
+
 		sender.Balance -= int64(amount)
 
 		if err := tx.Save(&sender).Error; err != nil {

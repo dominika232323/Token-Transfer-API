@@ -13,7 +13,6 @@ import (
 	"os"
 	"sync"
 	"testing"
-	"time"
 )
 
 var testDB *gorm.DB
@@ -55,6 +54,36 @@ func TestSuccessfulTransfer(t *testing.T) {
 	var sender db.Wallet
 	testDB.First(&sender, "address = ?", senderAddress)
 	assert.Equal(t, int64(800), sender.Balance)
+}
+
+func TestTransferWithNegativeAmount(t *testing.T) {
+	senderAddress := "0x0000000000000000000000000000000000000001"
+	recipientAddress := "0x0000000000000000000000000000000000000002"
+
+	err, mutation := SetUpDatabase(t, senderAddress, 1000, recipientAddress, 1000)
+	_, err = mutation.Transfer(context.Background(), senderAddress, recipientAddress, -200)
+
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "amount cannot be negative")
+}
+
+func TestTransferWithZeroAmount(t *testing.T) {
+	senderAddress := "0x0000000000000000000000000000000000000001"
+	recipientAddress := "0x0000000000000000000000000000000000000002"
+
+	err, mutation := SetUpDatabase(t, senderAddress, 1000, recipientAddress, 100)
+	newBalance, err := mutation.Transfer(context.Background(), senderAddress, senderAddress, 0)
+
+	assert.NoError(t, err)
+	assert.Equal(t, int32(1000), newBalance)
+
+	var recipient db.Wallet
+	testDB.First(&recipient, "address = ?", recipientAddress)
+	assert.Equal(t, int64(100), recipient.Balance)
+
+	var sender db.Wallet
+	testDB.First(&sender, "address = ?", senderAddress)
+	assert.Equal(t, int64(1000), sender.Balance)
 }
 
 func TestTransferInsufficientBalance(t *testing.T) {
@@ -113,46 +142,6 @@ func TestTransferToSelf(t *testing.T) {
 	assert.Equal(t, int64(1000), sender.Balance)
 }
 
-func TestTransferToSelfWithInsufficientBalance(t *testing.T) {
-	senderAddress := "0x0000000000000000000000000000000000000001"
-
-	err, mutation := SetUpDatabase(t, senderAddress, 100, "", 0)
-	_, err = mutation.Transfer(context.Background(), senderAddress, senderAddress, 200)
-
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "Insufficient balance")
-}
-
-func TestTransferWithNegativeAmount(t *testing.T) {
-	senderAddress := "0x0000000000000000000000000000000000000001"
-	recipientAddress := "0x0000000000000000000000000000000000000002"
-
-	err, mutation := SetUpDatabase(t, senderAddress, 1000, recipientAddress, 1000)
-	_, err = mutation.Transfer(context.Background(), senderAddress, recipientAddress, -200)
-
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "amount cannot be negative")
-}
-
-func TestTransferWithZeroAmount(t *testing.T) {
-	senderAddress := "0x0000000000000000000000000000000000000001"
-	recipientAddress := "0x0000000000000000000000000000000000000002"
-
-	err, mutation := SetUpDatabase(t, senderAddress, 1000, recipientAddress, 100)
-	newBalance, err := mutation.Transfer(context.Background(), senderAddress, senderAddress, 0)
-
-	assert.NoError(t, err)
-	assert.Equal(t, int32(1000), newBalance)
-
-	var recipient db.Wallet
-	testDB.First(&recipient, "address = ?", recipientAddress)
-	assert.Equal(t, int64(100), recipient.Balance)
-
-	var sender db.Wallet
-	testDB.First(&sender, "address = ?", senderAddress)
-	assert.Equal(t, int64(1000), sender.Balance)
-}
-
 func TestTransferWithNegativeAmountToSelf(t *testing.T) {
 	senderAddress := "0x0000000000000000000000000000000000000001"
 
@@ -175,6 +164,16 @@ func TestTransferWithZeroAmountToSelf(t *testing.T) {
 	var sender db.Wallet
 	testDB.First(&sender, "address = ?", senderAddress)
 	assert.Equal(t, int64(1000), sender.Balance)
+}
+
+func TestTransferToSelfWithInsufficientBalance(t *testing.T) {
+	senderAddress := "0x0000000000000000000000000000000000000001"
+
+	err, mutation := SetUpDatabase(t, senderAddress, 100, "", 0)
+	_, err = mutation.Transfer(context.Background(), senderAddress, senderAddress, 200)
+
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "Insufficient balance")
 }
 
 func TestTransferToNonExistentSelf(t *testing.T) {
@@ -217,8 +216,6 @@ func TestConcurrentTransfers(t *testing.T) {
 		}(i, amount)
 	}
 
-	time.Sleep(200 * time.Millisecond)
-
 	close(start)
 	wg.Wait()
 
@@ -255,6 +252,54 @@ func TestConcurrentTransfers_MultipleRuns(t *testing.T) {
 	for i := 0; i < 100; i++ {
 		t.Run(fmt.Sprintf("Run-%d", i), TestConcurrentTransfers)
 	}
+}
+
+func TestBidirectionalConcurrentTransfers(t *testing.T) {
+	walletA := "0x0000000000000000000000000000000000000001"
+	walletB := "0x0000000000000000000000000000000000000002"
+
+	_, mutation := SetUpDatabase(t, walletA, 1000, walletB, 1000)
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	start := make(chan struct{})
+
+	var err1, err2 error
+
+	go func() {
+		defer wg.Done()
+		<-start
+		_, err1 = mutation.Transfer(context.Background(), walletA, walletB, 100)
+	}()
+
+	go func() {
+		defer wg.Done()
+		<-start
+		_, err2 = mutation.Transfer(context.Background(), walletB, walletA, 150)
+	}()
+
+	close(start)
+	wg.Wait()
+
+	if err1 != nil {
+		assert.NotContains(t, err1.Error(), "deadlock")
+	}
+	if err2 != nil {
+		assert.NotContains(t, err2.Error(), "deadlock")
+	}
+
+	var a db.Wallet
+	var b db.Wallet
+
+	testDB.First(&a, "address = ?", walletA)
+	testDB.First(&b, "address = ?", walletB)
+
+	total := a.Balance + b.Balance
+
+	assert.Equal(t, int64(2000), total, "Total balance should remain constant")
+	assert.Equal(t, a.Balance, int64(1050))
+	assert.Equal(t, b.Balance, int64(950))
 }
 
 func TestConcurrentWalletCreation(t *testing.T) {
@@ -305,54 +350,6 @@ func TestConcurrentWalletCreation(t *testing.T) {
 	var sender db.Wallet
 	testDB.First(&sender, "address = ?", senderAddress)
 	assert.Equal(t, int64(1000)-expectedRecipientBalance, sender.Balance)
-}
-
-func TestBidirectionalConcurrentTransfers(t *testing.T) {
-	walletA := "0x0000000000000000000000000000000000000001"
-	walletB := "0x0000000000000000000000000000000000000002"
-
-	_, mutation := SetUpDatabase(t, walletA, 1000, walletB, 1000)
-
-	var wg sync.WaitGroup
-	wg.Add(2)
-
-	start := make(chan struct{})
-
-	var err1, err2 error
-
-	go func() {
-		defer wg.Done()
-		<-start
-		_, err1 = mutation.Transfer(context.Background(), walletA, walletB, 100)
-	}()
-
-	go func() {
-		defer wg.Done()
-		<-start
-		_, err2 = mutation.Transfer(context.Background(), walletB, walletA, 150)
-	}()
-
-	close(start)
-	wg.Wait()
-
-	if err1 != nil {
-		assert.NotContains(t, err1.Error(), "deadlock")
-	}
-	if err2 != nil {
-		assert.NotContains(t, err2.Error(), "deadlock")
-	}
-
-	var a db.Wallet
-	var b db.Wallet
-
-	testDB.First(&a, "address = ?", walletA)
-	testDB.First(&b, "address = ?", walletB)
-
-	total := a.Balance + b.Balance
-
-	assert.Equal(t, int64(2000), total, "Total balance should remain constant")
-	assert.Equal(t, a.Balance, int64(1050))
-	assert.Equal(t, b.Balance, int64(950))
 }
 
 func SetUpDatabase(t *testing.T, senderAddress string, senderBalance int64, recipientAddress string, recipientBalance int64) (error, graph.MutationResolver) {

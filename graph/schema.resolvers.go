@@ -7,6 +7,7 @@ package graph
 import (
 	"context"
 	"fmt"
+	"sort"
 
 	"github.com/dominika232323/token-transfer-api/internal/db"
 	"gorm.io/gorm"
@@ -16,42 +17,57 @@ import (
 // Transfer is the resolver for the transfer field.
 func (r *mutationResolver) Transfer(ctx context.Context, fromAddress string, toAddress string, amount int32) (int32, error) {
 	database := r.Resolver.DB
+	var updatedBalance int32
+
+	if amount < 0 {
+		return 0, fmt.Errorf("amount cannot be negative")
+	}
 
 	err := database.Transaction(func(tx *gorm.DB) error {
-		var sender db.Wallet
+		addresses := []string{fromAddress, toAddress}
+		sort.Strings(addresses)
 
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			First(&sender, "address = ?", fromAddress).Error; err != nil {
-			return fmt.Errorf("sender not found")
+		var wallets [2]db.Wallet
+
+		for i, addr := range addresses {
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+				FirstOrCreate(&wallets[i], db.Wallet{Address: addr}).Error; err != nil {
+				return fmt.Errorf("failed to lock wallet %s: %w", addr, err)
+			}
+		}
+
+		var sender, recipient *db.Wallet
+
+		if wallets[0].Address == fromAddress {
+			sender = &wallets[0]
+			recipient = &wallets[1]
+		} else {
+			sender = &wallets[1]
+			recipient = &wallets[0]
 		}
 
 		if sender.Balance < int64(amount) {
 			return fmt.Errorf("Insufficient balance")
 		}
 
-		if int64(amount) < 0 {
-			return fmt.Errorf("amount cannot be negative")
+		if fromAddress == toAddress {
+			updatedBalance = int32(sender.Balance)
+			return nil
 		}
 
 		sender.Balance -= int64(amount)
 
-		if err := tx.Save(&sender).Error; err != nil {
-			return err
-		}
-
-		var recipient db.Wallet
-
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			First(&recipient, "address = ?", toAddress).Error; err != nil {
-			return fmt.Errorf("recipient not found")
+		if err := tx.Save(sender).Error; err != nil {
+			return fmt.Errorf("failed to update sender balance: %v", err)
 		}
 
 		recipient.Balance += int64(amount)
 
-		if err := tx.Save(&recipient).Error; err != nil {
-			return err
+		if err := tx.Save(recipient).Error; err != nil {
+			return fmt.Errorf("failed to update recipient balance: %v", err)
 		}
 
+		updatedBalance = int32(sender.Balance)
 		return nil
 	})
 
@@ -59,9 +75,7 @@ func (r *mutationResolver) Transfer(ctx context.Context, fromAddress string, toA
 		return 0, err
 	}
 
-	var updatedSender db.Wallet
-	database.First(&updatedSender, "address = ?", fromAddress)
-	return int32(updatedSender.Balance), nil
+	return updatedBalance, nil
 }
 
 // Mutation returns MutationResolver implementation.

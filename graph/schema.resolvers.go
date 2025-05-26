@@ -7,6 +7,7 @@ package graph
 import (
 	"context"
 	"fmt"
+	"sort"
 
 	"github.com/dominika232323/token-transfer-api/internal/db"
 	"gorm.io/gorm"
@@ -23,11 +24,26 @@ func (r *mutationResolver) Transfer(ctx context.Context, fromAddress string, toA
 	}
 
 	err := database.Transaction(func(tx *gorm.DB) error {
-		var sender db.Wallet
+		addresses := []string{fromAddress, toAddress}
+		sort.Strings(addresses)
 
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			FirstOrCreate(&sender, db.Wallet{Address: fromAddress}).Error; err != nil {
-			return fmt.Errorf("failed to find or create sender: %v", err)
+		var wallets [2]db.Wallet
+
+		for i, addr := range addresses {
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+				FirstOrCreate(&wallets[i], db.Wallet{Address: addr}).Error; err != nil {
+				return fmt.Errorf("failed to lock wallet %s: %w", addr, err)
+			}
+		}
+
+		var sender, recipient *db.Wallet
+
+		if wallets[0].Address == fromAddress {
+			sender = &wallets[0]
+			recipient = &wallets[1]
+		} else {
+			sender = &wallets[1]
+			recipient = &wallets[0]
 		}
 
 		if sender.Balance < int64(amount) {
@@ -41,25 +57,17 @@ func (r *mutationResolver) Transfer(ctx context.Context, fromAddress string, toA
 
 		sender.Balance -= int64(amount)
 
-		if err := tx.Save(&sender).Error; err != nil {
+		if err := tx.Save(sender).Error; err != nil {
 			return fmt.Errorf("failed to update sender balance: %v", err)
-		}
-
-		var recipient db.Wallet
-
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			FirstOrCreate(&recipient, db.Wallet{Address: toAddress}).Error; err != nil {
-			return fmt.Errorf("failed to find or create recipient: %v", err)
 		}
 
 		recipient.Balance += int64(amount)
 
-		if err := tx.Save(&recipient).Error; err != nil {
+		if err := tx.Save(recipient).Error; err != nil {
 			return fmt.Errorf("failed to update recipient balance: %v", err)
 		}
 
 		updatedBalance = int32(sender.Balance)
-
 		return nil
 	})
 
